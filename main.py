@@ -295,8 +295,9 @@ def install_service():
                     (self._svc_name_, ""),
                 )
                 self.monitors = start_monitors()
-                host = get_config().get("web_host", "0.0.0.0")
-                port = get_config().get("web_port", 8080)
+                from config import get_config as _cfg
+                host = _cfg().get("web_host", "0.0.0.0")
+                port = _cfg().get("web_port", 8080)
                 start_web_server(host, port)
                 win32event.WaitForSingleObject(self.stop_event, win32event.INFINITE)
 
