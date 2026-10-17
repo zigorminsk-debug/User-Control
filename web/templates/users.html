@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+{% block title %}User Control — Управление пользователями{% endblock %}
+{% block page_title %}👥 Управление пользователями{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">👥 Пользователи системы</div>
+        <button class="btn btn-primary btn-sm" onclick="showAddForm()">➕ Добавить пользователя</button>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Логин</th>
+                    <th>ФИО</th>
+                    <th>Роль</th>
+                    <th>Создан</th>
+                    <th>Последний вход</th>
+                    <th>Статус</th>
+                    <th>Действия</th>
+                </tr>
+            </thead>
+            <tbody id="usersBody">
+                <tr><td colspan="7" class="empty-state"><div class="spinner"></div> Загрузка...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Форма добавления -->
+<div class="card" id="addForm" style="display:none">
+    <div class="card-header">
+        <div class="card-title">➕ Новый пользователь</div>
+    </div>
+    <div style="padding:10px 0">
+        <div class="form-group" style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+            <label style="font-size:13px;color:#8899aa;min-width:150px">Логин:</label>
+            <input type="text" id="newUsername" placeholder="username" style="max-width:250px">
+        </div>
+        <div class="form-group" style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+            <label style="font-size:13px;color:#8899aa;min-width:150px">Пароль:</label>
+            <input type="password" id="newPassword" placeholder="Минимум 6 символов" style="max-width:250px">
+        </div>
+        <div class="form-group" style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+            <label style="font-size:13px;color:#8899aa;min-width:150px">ФИО:</label>
+            <input type="text" id="newFullName" placeholder="Иванов Иван Иванович" style="max-width:350px">
+        </div>
+        <div class="form-group" style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+            <label style="font-size:13px;color:#8899aa;min-width:150px">Роль:</label>
+            <select id="newRole" style="max-width:200px">
+                <option value="viewer">Наблюдатель</option>
+                <option value="operator">Оператор</option>
+                <option value="admin">Администратор</option>
+            </select>
+        </div>
+        <div style="display:flex;gap:8px">
+            <button class="btn btn-primary" onclick="addUser()">💾 Создать</button>
+            <button class="btn btn-secondary" onclick="document.getElementById('addForm').style.display='none'">Отмена</button>
+        </div>
+    </div>
+</div>
+
+<!-- Смена пароля -->
+<div class="card" id="passwordForm" style="display:none">
+    <div class="card-header">
+        <div class="card-title">🔑 Смена пароля</div>
+    </div>
+    <div style="padding:10px 0">
+        <div class="form-group" style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+            <label style="font-size:13px;color:#8899aa;min-width:150px">Текущий пароль:</label>
+            <input type="password" id="oldPassword" style="max-width:250px">
+        </div>
+        <div class="form-group" style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+            <label style="font-size:13px;color:#8899aa;min-width:150px">Новый пароль:</label>
+            <input type="password" id="chgNewPassword" placeholder="Минимум 6 символов" style="max-width:250px">
+        </div>
+        <div style="display:flex;gap:8px">
+            <button class="btn btn-primary" onclick="changePassword()">💾 Сменить</button>
+            <button class="btn btn-secondary" onclick="document.getElementById('passwordForm').style.display='none'">Отмена</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const roleLabels = {
+    admin: '👑 Администратор',
+    operator: '🔧 Оператор',
+    viewer: '👁️ Наблюдатель'
+};
+
+async function loadUsers() {
+    const data = await App.fetchJson('/api/users');
+    if (!data) return;
+
+    const tbody = document.getElementById('usersBody');
+    if (data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Нет пользователей</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = data.map(u => `
+        <tr>
+            <td><span class="username-badge">${App.escapeHtml(u.username)}</span></td>
+            <td>${App.escapeHtml(u.full_name || '—')}</td>
+            <td>${roleLabels[u.role] || u.role}</td>
+            <td>${App.formatDate(u.created_at)}</td>
+            <td>${u.last_login ? App.formatDate(u.last_login) : '<span style="color:#5c7080">—</span>'}</td>
+            <td>${u.is_active
+                ? '<span class="severity success">Активен</span>'
+                : '<span class="severity warning">Заблокирован</span>'
+            }</td>
+            <td>
+                <div style="display:flex;gap:4px">
+                    ${u.username !== 'admin' ? `
+                        <button class="btn btn-secondary btn-sm" onclick="toggleUser('${u.username}')">
+                            ${u.is_active ? '🔒' : '🔓'}
+                        </button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteUser('${u.username}')">🗑️</button>
+                    ` : ''}
+                </div>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function showAddForm() {
+    document.getElementById('addForm').style.display = 'block';
+    document.getElementById('passwordForm').style.display = 'none';
+}
+
+async function addUser() {
+    const username = document.getElementById('newUsername').value.trim();
+    const password = document.getElementById('newPassword').value;
+    const fullName = document.getElementById('newFullName').value.trim();
+    const role = document.getElementById('newRole').value;
+
+    if (!username || !password) {
+        App.toast('Ошибка', 'Заполните логин и пароль', 'warning');
+        return;
+    }
+
+    const resp = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password, full_name: fullName, role })
+    });
+    const data = await resp.json();
+    if (data.status === 'ok') {
+        App.toast('Пользователь создан', username, 'success');
+        document.getElementById('addForm').style.display = 'none';
+        document.getElementById('newUsername').value = '';
+        document.getElementById('newPassword').value = '';
+        document.getElementById('newFullName').value = '';
+        loadUsers();
+    } else {
+        App.toast('Ошибка', data.message, 'critical');
+    }
+}
+
+async function deleteUser(username) {
+    if (!confirm(`Удалить пользователя ${username}?`)) return;
+    const resp = await fetch(`/api/users/${username}`, { method: 'DELETE' });
+    const data = await resp.json();
+    if (data.status === 'ok') {
+        App.toast('Удалён', username, 'info');
+        loadUsers();
+    } else {
+        App.toast('Ошибка', data.message, 'critical');
+    }
+}
+
+async function toggleUser(username) {
+    const resp = await fetch(`/api/users/${username}/toggle`, { method: 'POST' });
+    const data = await resp.json();
+    if (data.status === 'ok') {
+        App.toast('Готово', data.message, 'info');
+        loadUsers();
+    } else {
+        App.toast('Ошибка', data.message, 'critical');
+    }
+}
+
+async function changePassword() {
+    const oldPw = document.getElementById('oldPassword').value;
+    const newPw = document.getElementById('chgNewPassword').value;
+    const resp = await fetch('/api/users/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ old_password: oldPw, new_password: newPw })
+    });
+    const data = await resp.json();
+    if (data.status === 'ok') {
+        App.toast('Пароль изменён', '', 'success');
+        document.getElementById('passwordForm').style.display = 'none';
+    } else {
+        App.toast('Ошибка', data.message, 'critical');
+    }
+}
+
+function refreshData() { loadUsers(); }
+loadUsers();
+</script>
+{% endblock %}

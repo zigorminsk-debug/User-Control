@@ -1,0 +1,52 @@
+name: Release — Создание релиза
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Номер версии (без v-префикса, например: 1.0.0)'
+        required: true
+      prerelease:
+        description: 'Предварительный релиз?'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    name: Создание тега и релиза
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout репозитория
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Проверка версии
+        id: check
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          TAG="v${VERSION}"
+
+          # Проверяем, не существует ли уже тег
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "❌ Тег $TAG уже существует!"
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "✅ Версия: $VERSION, тег: $TAG"
+
+      - name: Создание тега
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.check.outputs.tag }}" -m "Release ${{ steps.check.outputs.tag }}"
+          git push origin "${{ steps.check.outputs.tag }}"
+
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      tag: ${{ steps.check.outputs.tag }}

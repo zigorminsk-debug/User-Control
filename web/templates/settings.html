@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}User Control — Настройки{% endblock %}
+{% block page_title %}⚙️ Настройки системы{% endblock %}
+
+{% block content %}
+<div id="settingsContent">
+    <div class="empty-state"><div class="spinner"></div> Загрузка настроек...</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadSettings() {
+    const config = await App.fetchJson('/api/config');
+    if (!config) return;
+
+    const m = config.monitoring || {};
+    const a = config.alerts || {};
+
+    const container = document.getElementById('settingsContent');
+    container.innerHTML = `
+        <div class="settings-section">
+            <h3>📡 Мониторинг</h3>
+            <div class="form-group">
+                <label>Мониторинг Event Log:</label>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="cfg_event_log" ${m.event_log_enabled ? 'checked' : ''}>
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+            <div class="form-group">
+                <label>Мониторинг буфера обмена:</label>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="cfg_clipboard" ${m.clipboard_enabled ? 'checked' : ''}>
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+            <div class="form-group">
+                <label>Мониторинг файловых операций:</label>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="cfg_file_access" ${m.file_access_enabled ? 'checked' : ''}>
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+            <div class="form-group">
+                <label>Интервал опроса Event Log (сек):</label>
+                <input type="number" id="cfg_event_poll" value="${m.event_log_poll_interval || 10}" min="5" max="300">
+            </div>
+            <div class="form-group">
+                <label>Интервал опроса буфера обмена (сек):</label>
+                <input type="number" id="cfg_clipboard_poll" value="${m.clipboard_poll_interval || 2}" min="1" max="60">
+            </div>
+            <div class="form-group">
+                <label>Интервал сканирования файлов (сек):</label>
+                <input type="number" id="cfg_file_scan" value="${m.file_access_scan_interval || 300}" min="60" max="3600">
+            </div>
+        </div>
+
+        <div class="settings-section">
+            <h3>🔔 Пороги оповещений</h3>
+            <div class="form-group">
+                <label>Макс. копирований в минуту:</label>
+                <input type="number" id="cfg_clip_min" value="${a.clipboard_max_copies_per_minute || 50}" min="1" max="1000">
+            </div>
+            <div class="form-group">
+                <label>Макс. копирований в час:</label>
+                <input type="number" id="cfg_clip_hour" value="${a.clipboard_max_copies_per_hour || 200}" min="1" max="10000">
+            </div>
+            <div class="form-group">
+                <label>Макс. отказов в доступе в час:</label>
+                <input type="number" id="cfg_denied_hour" value="${a.file_access_max_denied_per_hour || 20}" min="1" max="1000">
+            </div>
+            <div class="form-group">
+                <label>Всплывающие оповещения:</label>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="cfg_popup" ${a.enable_popup_alerts ? 'checked' : ''}>
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+        </div>
+
+        <div class="settings-section">
+            <h3>🌐 Веб-сервер</h3>
+            <div class="form-group">
+                <label>Хост:</label>
+                <input type="text" id="cfg_host" value="${config.web_host || '0.0.0.0'}">
+            </div>
+            <div class="form-group">
+                <label>Порт:</label>
+                <input type="number" id="cfg_port" value="${config.web_port || 8080}" min="1" max="65535">
+            </div>
+        </div>
+
+        <div class="settings-section">
+            <h3>👥 Исключённые пользователи</h3>
+            <div class="form-group">
+                <label>Пользователи через запятую:</label>
+                <input type="text" id="cfg_excluded" value="${(config.excluded_users || []).join(', ')}" style="max-width:500px">
+            </div>
+        </div>
+
+        <div class="settings-section">
+            <h3>📂 Отслеживаемые пути</h3>
+            <div class="form-group">
+                <label>Пути через запятую:</label>
+                <input type="text" id="cfg_paths" value="${(config.monitored_paths || []).join(', ')}" style="max-width:500px">
+            </div>
+        </div>
+
+        <div style="margin-top:20px; display:flex; gap:12px">
+            <button class="btn btn-primary" onclick="saveSettings()">💾 Сохранить настройки</button>
+            <button class="btn btn-secondary" onclick="loadSettings()">↩️ Сбросить</button>
+        </div>
+    `;
+}
+
+async function saveSettings() {
+    const settings = {
+        "monitoring.event_log_enabled": document.getElementById('cfg_event_log').checked,
+        "monitoring.clipboard_enabled": document.getElementById('cfg_clipboard').checked,
+        "monitoring.file_access_enabled": document.getElementById('cfg_file_access').checked,
+        "monitoring.event_log_poll_interval": parseInt(document.getElementById('cfg_event_poll').value),
+        "monitoring.clipboard_poll_interval": parseInt(document.getElementById('cfg_clipboard_poll').value),
+        "monitoring.file_access_scan_interval": parseInt(document.getElementById('cfg_file_scan').value),
+        "alerts.clipboard_max_copies_per_minute": parseInt(document.getElementById('cfg_clip_min').value),
+        "alerts.clipboard_max_copies_per_hour": parseInt(document.getElementById('cfg_clip_hour').value),
+        "alerts.file_access_max_denied_per_hour": parseInt(document.getElementById('cfg_denied_hour').value),
+        "alerts.enable_popup_alerts": document.getElementById('cfg_popup').checked,
+        "web_host": document.getElementById('cfg_host').value,
+        "web_port": parseInt(document.getElementById('cfg_port').value),
+        "excluded_users": document.getElementById('cfg_excluded').value.split(',').map(s => s.trim()).filter(Boolean),
+        "monitored_paths": document.getElementById('cfg_paths').value.split(',').map(s => s.trim()).filter(Boolean),
+    };
+
+    try {
+        const resp = await fetch('/api/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(settings)
+        });
+        if (resp.ok) {
+            App.toast('Настройки сохранены', 'Конфигурация обновлена', 'success');
+        } else {
+            App.toast('Ошибка', 'Не удалось сохранить настройки', 'critical');
+        }
+    } catch (e) {
+        App.toast('Ошибка', e.message, 'critical');
+    }
+}
+
+loadSettings();
+</script>
+{% endblock %}

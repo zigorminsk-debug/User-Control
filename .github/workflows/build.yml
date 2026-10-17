@@ -1,0 +1,222 @@
+name: Build — Сборка Windows-приложения
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Версия релиза (например: 1.0.0)'
+        required: false
+        default: 'dev'
+
+permissions:
+  contents: write
+
+env:
+  APP_NAME: UserControl
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  # ──────────────────────────────────────────────
+  # Шаг 1: Сборка .exe через PyInstaller (Windows)
+  # ──────────────────────────────────────────────
+  build-windows:
+    name: Сборка Windows .exe
+    runs-on: windows-latest
+    steps:
+      - name: Checkout репозитория
+        uses: actions/checkout@v4
+
+      - name: Установка Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Установка зависимостей
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Сборка .exe через PyInstaller (spec-файл)
+        run: |
+          pyinstaller UserControl.spec --clean
+
+      - name: Проверка артефакта
+        run: |
+          if (Test-Path "dist/${{ env.APP_NAME }}.exe") {
+            echo "✅ Сборка успешна!"
+            Get-Item "dist/${{ env.APP_NAME }}.exe" | Select-Object Name, Length
+          } else {
+            echo "❌ Файл .exe не найден!"
+            exit 1
+          }
+
+      - name: Создание архива с .exe
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $version = "${{ github.event.inputs.version }}"
+          }
+          $archiveName = "${{ env.APP_NAME }}-v${version}-win64.zip"
+
+          # Копируем .exe и конфиг
+          New-Item -ItemType Directory -Path "package" -Force
+          Copy-Item "dist/${{ env.APP_NAME }}.exe" "package/"
+          Copy-Item "config.py" "package/"
+          Copy-Item "README.md" "package/"
+          Copy-Item "setup.bat" "package/"
+
+          # Создаём папки для данных
+          New-Item -ItemType Directory -Path "package/web/templates" -Force
+          New-Item -ItemType Directory -Path "package/web/static" -Force
+          Copy-Item "web/templates/*" "package/web/templates/" -Recurse -ErrorAction SilentlyContinue
+          Copy-Item "web/static/*" "package/web/static/" -Recurse -ErrorAction SilentlyContinue
+
+          Compress-Archive -Path "package/*" -DestinationPath $archiveName
+          echo "ARCHIVE_NAME=$archiveName" >> $env:GITHUB_ENV
+          echo "VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Загрузка артефакта
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: ${{ env.APP_NAME }}-*.zip
+          retention-days: 30
+
+  # ──────────────────────────────────────────────
+  # Шаг 2: Сборка Python-пакета (portable, Linux)
+  # ──────────────────────────────────────────────
+  build-python-package:
+    name: Сборка Python-пакета
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout репозитория
+        uses: actions/checkout@v4
+
+      - name: Определение версии
+        id: version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Создание портативного пакета
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          PACKAGE_DIR="UserControl-v${VERSION}"
+          mkdir -p "$PACKAGE_DIR"
+
+          # Копируем исходники
+          cp main.py config.py database.py auth.py risk_engine.py reports.py requirements.txt README.md setup.bat .gitignore "$PACKAGE_DIR/"
+          cp -r monitors web "$PACKAGE_DIR/"
+
+          # Создаём .tar.gz
+          tar -czf "UserControl-v${VERSION}-src.tar.gz" "$PACKAGE_DIR"
+
+          # Создаём .zip
+          zip -r "UserControl-v${VERSION}-src.zip" "$PACKAGE_DIR"
+
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Загрузка артефактов
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-package
+          path: |
+            UserControl-*-src.tar.gz
+            UserControl-*-src.zip
+          retention-days: 30
+
+  # ──────────────────────────────────────────────
+  # Шаг 3: Публикация релиза на GitHub
+  # ──────────────────────────────────────────────
+  release:
+    name: Публикация релиза
+    needs: [build-windows, build-python-package]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout репозитория
+        uses: actions/checkout@v4
+
+      - name: Определение версии
+        id: version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Скачивание артефактов
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Подготовка файлов для релиза
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name "*.zip" -o -name "*.tar.gz" -o -name "*.exe" \) -exec cp {} release/ \;
+          ls -la release/
+
+      - name: Генерация описания релиза
+        id: notes
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          cat > release_notes.md << 'RELEASING'
+          ## 🛡️ User Control v${VERSION}
+
+          ### Что нового
+          - Система мониторинга действий пользователей на Windows Server
+          - Веб-интерфейс с аутентификацией и ролями
+          - Мониторинг отказов в доступе (Windows Event Log)
+          - Мониторинг буфера обмена RDP-сессий
+          - Мониторинг файловых операций и USB-устройств
+          - Система оценки рисков пользователей
+          - Генератор HTML-отчётов
+          - GUI-панель управления
+
+          ### Установка
+
+          **Windows (.exe):**
+          ```
+          1. Скачайте UserControl-v${VERSION}-win64.zip
+          2. Распакуйте архив
+          3. Запустите setup.bat от имени администратора
+          ИЛИ
+          3. Запустите UserControl.exe
+          ```
+
+          **Из исходников (Python):**
+          ```
+          1. Скачайте UserControl-v${VERSION}-src.zip
+          2. pip install -r requirements.txt
+          3. python main.py
+          ```
+
+          ### Доступ к веб-интерфейсу
+          Откройте `http://localhost:8080`
+          Логин: `admin` / `admin123`
+          RELEASING
+
+          # Подставляем версию
+          sed -i "s/\${VERSION}/$VERSION/g" release_notes.md
+
+      - name: Публикация релиза
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "User Control v${{ steps.version.outputs.version }}"
+          body_path: release_notes.md
+          files: release/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

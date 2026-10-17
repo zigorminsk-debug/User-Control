@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}User Control — Оповещения{% endblock %}
+{% block page_title %}🔔 Оповещения{% endblock %}
+
+{% block content %}
+<div class="filters-bar">
+    <div class="filter-group">
+        <label class="toggle-switch">
+            <input type="checkbox" id="filterUnread">
+            <span class="toggle-slider"></span>
+        </label>
+        <span>Только непрочитанные</span>
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="loadData()">🔍 Обновить</button>
+    <button class="btn btn-danger btn-sm" onclick="App.acknowledgeAll()">✅ Подтвердить все</button>
+</div>
+
+<div id="alertsList">
+    <div class="empty-state"><div class="spinner"></div> Загрузка...</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const severityIcons = { critical: '🔴', warning: '🟡', info: '🔵' };
+
+async function loadData() {
+    const unread = document.getElementById('filterUnread').checked;
+    let url = `/api/alerts?limit=200`;
+    if (unread) url += `&unread=true`;
+    const data = await App.fetchJson(url);
+    if (!data) return;
+
+    const container = document.getElementById('alertsList');
+    if (data.length === 0) {
+        container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🔔</div><div class="empty-state-text">Нет оповещений</div><div class="empty-state-sub">Все оповещения обработаны</div></div>';
+        return;
+    }
+
+    container.innerHTML = data.map(a => `
+        <div class="alert-card ${a.is_read ? '' : 'unread'} ${a.is_acknowledged ? 'acknowledged' : ''}">
+            <span class="alert-severity-icon">${severityIcons[a.severity] || '🔵'}</span>
+            <div class="alert-body">
+                <div class="alert-title">${App.escapeHtml(a.title)}</div>
+                <div class="alert-description">${App.escapeHtml(a.description)}</div>
+                <div class="alert-time">
+                    📅 ${App.formatDate(a.timestamp)}
+                    ${a.username ? ' • 👤 ' + App.escapeHtml(a.username) : ''}
+                    • ${a.alert_type}
+                </div>
+            </div>
+            <div class="alert-actions">
+                ${!a.is_acknowledged ? `<button class="btn btn-secondary btn-sm" onclick="App.acknowledgeAlert(${a.id})">✅ Подтвердить</button>` : '<span class="severity success">Обработано</span>'}
+            </div>
+        </div>
+    `).join('');
+}
+
+function refreshData() { loadData(); }
+loadData();
+</script>
+{% endblock %}

@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}User Control — Входы в систему{% endblock %}
+{% block page_title %}🔑 Входы в систему{% endblock %}
+
+{% block content %}
+<div class="filters-bar">
+    <div class="filter-group">
+        <label>Пользователь:</label>
+        <input type="text" id="filterUser" placeholder="Имя пользователя" style="width:160px">
+    </div>
+    <div class="filter-group">
+        <label>Тип:</label>
+        <select id="filterType" style="width:120px">
+            <option value="">Все</option>
+            <option value="success">Успешные</option>
+            <option value="failure">Неудачные</option>
+            <option value="logout">Выход</option>
+        </select>
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="loadData()">🔍 Найти</button>
+    <button class="btn btn-secondary btn-sm" onclick="resetFilters()">Сбросить</button>
+    <button class="btn btn-secondary btn-sm" onclick="App.exportCsv('login-events')">📥 Экспорт CSV</button>
+</div>
+
+<div class="stats-grid" style="margin-bottom:16px">
+    <div class="stat-card">
+        <div class="stat-icon green">✅</div>
+        <div class="stat-info">
+            <div class="stat-label">Успешные входы (24ч)</div>
+            <div class="stat-value" id="statSuccess">—</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon red">🔒</div>
+        <div class="stat-info">
+            <div class="stat-label">Неудачные попытки (24ч)</div>
+            <div class="stat-value" id="statFailure">—</div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">🔑 События входа</div>
+        <span class="stat-value" id="totalCount" style="font-size:18px">0</span>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Время</th>
+                    <th>Пользователь</th>
+                    <th>Домен</th>
+                    <th>IP-адрес</th>
+                    <th>Тип события</th>
+                    <th>Тип входа</th>
+                    <th>Причина отказа</th>
+                    <th>EventID</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody">
+                <tr><td colspan="8" class="empty-state"><div class="spinner"></div> Загрузка...</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="pagination">
+        <button class="btn btn-secondary btn-sm" id="btnPrev" onclick="prevPage()">← Назад</button>
+        <span class="pagination-info" id="pageInfo">Страница 1</span>
+        <button class="btn btn-secondary btn-sm" id="btnNext" onclick="nextPage()">Далее →</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let offset = 0;
+const limit = 50;
+
+const typeLabels = {
+    success: '✅ Успех',
+    failure: '❌ Отказ',
+    logout: '🚪 Выход'
+};
+
+async function loadStats() {
+    const data = await App.fetchJson('/api/stats?hours=24');
+    if (!data) return;
+    document.getElementById('statSuccess').textContent = App.formatNumber(data.login_success);
+    document.getElementById('statFailure').textContent = App.formatNumber(data.login_failure);
+}
+
+async function loadData() {
+    const user = document.getElementById('filterUser').value;
+    const type = document.getElementById('filterType').value;
+    let url = `/api/login-events?limit=${limit}&offset=${offset}`;
+    if (user) url += `&username=${encodeURIComponent(user)}`;
+    if (type) url += `&event_type=${encodeURIComponent(type)}`;
+    const data = await App.fetchJson(url);
+    if (!data) return;
+
+    document.getElementById('totalCount').textContent = data.length;
+    const tbody = document.getElementById('tableBody');
+
+    if (data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="empty-state"><div class="empty-state-icon">🔑</div><div class="empty-state-text">Нет событий</div></td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = data.map(e => `
+        <tr>
+            <td>${App.formatDate(e.timestamp)}</td>
+            <td><span class="username-badge">${App.escapeHtml(e.username)}</span></td>
+            <td>${App.escapeHtml(e.domain)}</td>
+            <td>${App.escapeHtml(e.source_ip)}</td>
+            <td><span class="event-type ${e.event_type}">${typeLabels[e.event_type] || e.event_type}</span></td>
+            <td>${App.escapeHtml(e.logon_type || '—')}</td>
+            <td title="${App.escapeHtml(e.failure_reason)}">${App.truncate(e.failure_reason || '—', 40)}</td>
+            <td>${e.event_id}</td>
+        </tr>
+    `).join('');
+
+    document.getElementById('pageInfo').textContent = `Страница ${Math.floor(offset / limit) + 1}`;
+    document.getElementById('btnPrev').disabled = offset === 0;
+    document.getElementById('btnNext').disabled = data.length < limit;
+}
+
+function resetFilters() {
+    document.getElementById('filterUser').value = '';
+    document.getElementById('filterType').value = '';
+    offset = 0;
+    loadData();
+}
+
+function prevPage() { offset = Math.max(0, offset - limit); loadData(); }
+function nextPage() { offset += limit; loadData(); }
+
+function refreshData() { loadStats(); loadData(); }
+loadStats();
+loadData();
+</script>
+{% endblock %}

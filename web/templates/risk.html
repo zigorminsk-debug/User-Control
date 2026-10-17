@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}User Control — Оценка рисков{% endblock %}
+{% block page_title %}⚠️ Оценка рисков пользователей{% endblock %}
+
+{% block content %}
+<div class="stats-grid" style="margin-bottom:16px">
+    <div class="stat-card">
+        <div class="stat-icon red">⛔</div>
+        <div class="stat-info">
+            <div class="stat-label">Экстремальный</div>
+            <div class="stat-value" id="statExtreme">0</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon orange">🔴</div>
+        <div class="stat-info">
+            <div class="stat-label">Критический</div>
+            <div class="stat-value" id="statCritical">0</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon yellow">🟠</div>
+        <div class="stat-info">
+            <div class="stat-label">Высокий</div>
+            <div class="stat-value" id="statHigh">0</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon blue">🟡</div>
+        <div class="stat-info">
+            <div class="stat-label">Средний</div>
+            <div class="stat-value" id="statMedium">0</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon green">🟢</div>
+        <div class="stat-info">
+            <div class="stat-label">Низкий</div>
+            <div class="stat-value" id="statLow">0</div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">📊 Оценка рисков по пользователям</div>
+        <button class="btn btn-primary btn-sm" onclick="loadData()">🔄 Обновить</button>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Пользователь</th>
+                    <th>Оценка риска</th>
+                    <th>Уровень</th>
+                    <th>Факторы риска</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody">
+                <tr><td colspan="4" class="empty-state"><div class="spinner"></div> Загрузка...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const riskColors = {
+    low: '#22c55e',
+    medium: '#eab308',
+    high: '#f97316',
+    critical: '#ef4444',
+    extreme: '#dc2626'
+};
+
+function renderScore(score, level) {
+    const color = riskColors[level] || '#888';
+    const width = Math.min(score, 100);
+    return `
+        <div style="display:flex;align-items:center;gap:10px">
+            <div style="flex:1;background:rgba(255,255,255,0.05);border-radius:4px;height:24px;position:relative;min-width:120px">
+                <div style="background:${color};width:${width}%;height:100%;border-radius:4px;transition:width 0.5s"></div>
+                <span style="position:absolute;left:8px;top:3px;font-size:12px;font-weight:700;text-shadow:0 0 4px rgba(0,0,0,0.5)">${score}</span>
+            </div>
+            <span style="font-size:20px;font-weight:700;color:${color};min-width:35px">${score}</span>
+        </div>
+    `;
+}
+
+async function loadData() {
+    const data = await App.fetchJson('/api/risk/summary?hours=24');
+    if (!data) return;
+
+    document.getElementById('statExtreme').textContent = data.extreme || 0;
+    document.getElementById('statCritical').textContent = data.critical || 0;
+    document.getElementById('statHigh').textContent = data.high || 0;
+    document.getElementById('statMedium').textContent = data.medium || 0;
+    document.getElementById('statLow').textContent = data.low || 0;
+
+    const users = data.top_risky_users || [];
+    const tbody = document.getElementById('tableBody');
+
+    if (users.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="empty-state"><div class="empty-state-icon">✅</div><div class="empty-state-text">Нет данных о рисках</div></td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = users.map(u => {
+        const factors = (u.factors || []).map(f =>
+            `<div style="margin-bottom:4px;font-size:12px">• ${App.escapeHtml(f.description)} <span style="color:${riskColors.medium}">(+${f.points})</span></div>`
+        ).join('');
+        return `
+            <tr>
+                <td><span class="username-badge">${App.escapeHtml(u.username)}</span></td>
+                <td style="min-width:200px">${renderScore(u.score, u.level)}</td>
+                <td>${u.level_label}</td>
+                <td>${factors || '<span style="color:#5c7080">—</span>'}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function refreshData() { loadData(); }
+loadData();
+</script>
+{% endblock %}

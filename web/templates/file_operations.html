@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}User Control — Файловые операции{% endblock %}
+{% block page_title %}📁 Файловые операции{% endblock %}
+
+{% block content %}
+<div class="filters-bar">
+    <div class="filter-group">
+        <label>Пользователь:</label>
+        <input type="text" id="filterUser" placeholder="Имя пользователя" style="width:160px">
+    </div>
+    <div class="filter-group">
+        <label>Операция:</label>
+        <select id="filterOperation" style="width:120px">
+            <option value="">Все</option>
+            <option value="copy">Копирование</option>
+            <option value="move">Перемещение</option>
+            <option value="delete">Удаление</option>
+            <option value="rename">Переименование</option>
+            <option value="modify">Изменение</option>
+        </select>
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="loadData()">🔍 Найти</button>
+    <button class="btn btn-secondary btn-sm" onclick="resetFilters()">Сбросить</button>
+    <button class="btn btn-secondary btn-sm" onclick="App.exportCsv('file-operations')">📥 Экспорт CSV</button>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">📁 Файловые операции</div>
+        <span class="stat-value" id="totalCount" style="font-size:18px">0</span>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Время</th>
+                    <th>Пользователь</th>
+                    <th>Операция</th>
+                    <th>Источник</th>
+                    <th>Назначение</th>
+                    <th>Размер</th>
+                    <th>Расширение</th>
+                    <th>Статус</th>
+                    <th>Причина</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody">
+                <tr><td colspan="9" class="empty-state"><div class="spinner"></div> Загрузка...</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="pagination">
+        <button class="btn btn-secondary btn-sm" id="btnPrev" onclick="prevPage()">← Назад</button>
+        <span class="pagination-info" id="pageInfo">Страница 1</span>
+        <button class="btn btn-secondary btn-sm" id="btnNext" onclick="nextPage()">Далее →</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let offset = 0;
+const limit = 50;
+
+const opLabels = {
+    copy: '📦 Копирование',
+    move: '📦 Перемещение',
+    delete: '🗑️ Удаление',
+    rename: '✏️ Переименование',
+    modify: '📝 Изменение'
+};
+
+async function loadData() {
+    const user = document.getElementById('filterUser').value;
+    const operation = document.getElementById('filterOperation').value;
+    let url = `/api/file-operations?limit=${limit}&offset=${offset}`;
+    if (user) url += `&username=${encodeURIComponent(user)}`;
+    if (operation) url += `&operation=${encodeURIComponent(operation)}`;
+    const data = await App.fetchJson(url);
+    if (!data) return;
+
+    document.getElementById('totalCount').textContent = data.length;
+    const tbody = document.getElementById('tableBody');
+
+    if (data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" class="empty-state"><div class="empty-state-icon">📁</div><div class="empty-state-text">Нет событий</div></td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = data.map(e => `
+        <tr style="${e.is_suspicious ? 'background:rgba(239,68,68,0.05)' : ''}">
+            <td>${App.formatDate(e.timestamp)}</td>
+            <td><span class="username-badge">${App.escapeHtml(e.username)}</span></td>
+            <td>${opLabels[e.operation] || e.operation}</td>
+            <td class="path-cell" title="${App.escapeHtml(e.source_path)}">${App.truncate(e.source_path, 45)}</td>
+            <td class="path-cell" title="${App.escapeHtml(e.dest_path)}">${App.truncate(e.dest_path || '—', 45)}</td>
+            <td>${e.file_size > 0 ? App.formatNumber(Math.round(e.file_size / 1024)) + ' КБ' : '—'}</td>
+            <td>${App.escapeHtml(e.file_extension || '—')}</td>
+            <td>${e.is_suspicious ? '<span class="severity warning">Подозрительно</span>' : '<span class="severity success">Норма</span>'}</td>
+            <td title="${App.escapeHtml(e.reason)}">${App.truncate(e.reason, 40)}</td>
+        </tr>
+    `).join('');
+
+    document.getElementById('pageInfo').textContent = `Страница ${Math.floor(offset / limit) + 1}`;
+    document.getElementById('btnPrev').disabled = offset === 0;
+    document.getElementById('btnNext').disabled = data.length < limit;
+}
+
+function resetFilters() {
+    document.getElementById('filterUser').value = '';
+    document.getElementById('filterOperation').value = '';
+    offset = 0;
+    loadData();
+}
+
+function prevPage() { offset = Math.max(0, offset - limit); loadData(); }
+function nextPage() { offset += limit; loadData(); }
+
+function refreshData() { loadData(); }
+loadData();
+</script>
+{% endblock %}

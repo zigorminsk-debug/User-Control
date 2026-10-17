@@ -1,0 +1,313 @@
+{% extends "base.html" %}
+{% block title %}User Control — Панель управления{% endblock %}
+{% block page_title %}📊 Панель управления{% endblock %}
+
+{% block content %}
+<!-- Карточки статистики -->
+<div class="stats-grid" id="statsGrid">
+    <div class="stat-card">
+        <div class="stat-icon red">🚫</div>
+        <div class="stat-info">
+            <div class="stat-label">Отказы в доступе</div>
+            <div class="stat-value" id="statAccessDenied">—</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon blue">📋</div>
+        <div class="stat-info">
+            <div class="stat-label">Операции буфера</div>
+            <div class="stat-value" id="statClipboard">—</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon yellow">⚠️</div>
+        <div class="stat-info">
+            <div class="stat-label">Подозрительные копирования</div>
+            <div class="stat-value" id="statClipboardSuspicious">—</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon purple">📁</div>
+        <div class="stat-info">
+            <div class="stat-label">Файловые операции</div>
+            <div class="stat-value" id="statFileOps">—</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon green">✅</div>
+        <div class="stat-info">
+            <div class="stat-label">Успешные входы</div>
+            <div class="stat-value" id="statLoginSuccess">—</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon orange">🔒</div>
+        <div class="stat-info">
+            <div class="stat-label">Неудачные входы</div>
+            <div class="stat-value" id="statLoginFailure">—</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon cyan">🔔</div>
+        <div class="stat-info">
+            <div class="stat-label">Непрочитанные оповещения</div>
+            <div class="stat-value" id="statAlerts">—</div>
+        </div>
+    </div>
+</div>
+
+<!-- Графики -->
+<div class="charts-grid">
+    <div class="chart-container">
+        <div class="card-header">
+            <div class="card-title">📈 Отказы в доступе по часам</div>
+        </div>
+        <canvas id="chartAccessDenied" height="250"></canvas>
+    </div>
+    <div class="chart-container">
+        <div class="card-header">
+            <div class="card-title">📋 Активность буфера обмена по часам</div>
+        </div>
+        <canvas id="chartClipboard" height="250"></canvas>
+    </div>
+</div>
+
+<div class="charts-grid">
+    <div class="chart-container">
+        <div class="card-header">
+            <div class="card-title">👤 Топ пользователей — отказы в доступе</div>
+        </div>
+        <canvas id="chartUsersDenied" height="250"></canvas>
+    </div>
+    <div class="chart-container">
+        <div class="card-header">
+            <div class="card-title">📋 Топ пользователей — буфер обмена</div>
+        </div>
+        <canvas id="chartUsersClipboard" height="250"></canvas>
+    </div>
+</div>
+
+<!-- Последние события -->
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">🚫 Последние отказы в доступе</div>
+        <a href="/access-denied" class="btn btn-secondary btn-sm">Все события →</a>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Время</th>
+                    <th>Пользователь</th>
+                    <th>Файл</th>
+                    <th>Процесс</th>
+                    <th>Уровень</th>
+                </tr>
+            </thead>
+            <tbody id="recentDeniedBody">
+                <tr><td colspan="5" class="empty-state"><div class="spinner"></div> Загрузка...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">🔔 Последние оповещения</div>
+        <a href="/alerts" class="btn btn-secondary btn-sm">Все оповещения →</a>
+    </div>
+    <div id="recentAlertsList">
+        <div class="empty-state"><div class="spinner"></div> Загрузка...</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+let chartAccessDenied, chartClipboard, chartUsersDenied, chartUsersClipboard;
+
+async function loadStats() {
+    const data = await App.fetchJson('/api/stats?hours=24');
+    if (!data) return;
+    document.getElementById('statAccessDenied').textContent = App.formatNumber(data.access_denied);
+    document.getElementById('statClipboard').textContent = App.formatNumber(data.clipboard_total);
+    document.getElementById('statClipboardSuspicious').textContent = App.formatNumber(data.clipboard_suspicious);
+    document.getElementById('statFileOps').textContent = App.formatNumber(data.file_operations);
+    document.getElementById('statLoginSuccess').textContent = App.formatNumber(data.login_success);
+    document.getElementById('statLoginFailure').textContent = App.formatNumber(data.login_failure);
+    document.getElementById('statAlerts').textContent = App.formatNumber(data.unread_alerts);
+}
+
+async function loadTimeline() {
+    const data = await App.fetchJson('/api/timeline?hours=24');
+    if (!data) return;
+
+    const chartOpts = {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+            x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#8899aa', maxRotation: 45, font: { size: 10 } } },
+            y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#8899aa' }, beginAtZero: true }
+        }
+    };
+
+    // График отказов в доступе
+    const adLabels = data.access_denied_timeline.map(d => {
+        const dt = new Date(d.hour);
+        return dt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    });
+    const adValues = data.access_denied_timeline.map(d => d.count);
+
+    if (chartAccessDenied) chartAccessDenied.destroy();
+    chartAccessDenied = new Chart(document.getElementById('chartAccessDenied'), {
+        type: 'bar',
+        data: {
+            labels: adLabels,
+            datasets: [{
+                data: adValues,
+                backgroundColor: 'rgba(239,68,68,0.6)',
+                borderColor: 'rgba(239,68,68,1)',
+                borderWidth: 1,
+                borderRadius: 4
+            }]
+        },
+        options: chartOpts
+    });
+
+    // График буфера обмена
+    const cbLabels = data.clipboard_timeline.map(d => {
+        const dt = new Date(d.hour);
+        return dt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    });
+    const cbValues = data.clipboard_timeline.map(d => d.count);
+
+    if (chartClipboard) chartClipboard.destroy();
+    chartClipboard = new Chart(document.getElementById('chartClipboard'), {
+        type: 'line',
+        data: {
+            labels: cbLabels,
+            datasets: [{
+                data: cbValues,
+                borderColor: 'rgba(59,130,246,1)',
+                backgroundColor: 'rgba(59,130,246,0.1)',
+                fill: true,
+                tension: 0.4,
+                pointRadius: 3
+            }]
+        },
+        options: chartOpts
+    });
+}
+
+async function loadUserStats() {
+    const data = await App.fetchJson('/api/user-stats?hours=24');
+    if (!data) return;
+
+    const barOpts = {
+        indexAxis: 'y',
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+            x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#8899aa' }, beginAtZero: true },
+            y: { grid: { display: false }, ticks: { color: '#e8edf2', font: { size: 12 } } }
+        }
+    };
+
+    // Топ отказов
+    const adUsers = data.access_denied_by_user.slice(0, 10);
+    if (chartUsersDenied) chartUsersDenied.destroy();
+    chartUsersDenied = new Chart(document.getElementById('chartUsersDenied'), {
+        type: 'bar',
+        data: {
+            labels: adUsers.map(d => d.username),
+            datasets: [{
+                data: adUsers.map(d => d.count),
+                backgroundColor: [
+                    'rgba(239,68,68,0.7)', 'rgba(249,115,22,0.7)', 'rgba(234,179,8,0.7)',
+                    'rgba(168,85,247,0.7)', 'rgba(59,130,246,0.7)', 'rgba(6,182,212,0.7)',
+                    'rgba(34,197,94,0.7)', 'rgba(236,72,153,0.7)', 'rgba(99,102,241,0.7)', 'rgba(156,163,175,0.7)'
+                ],
+                borderRadius: 6
+            }]
+        },
+        options: barOpts
+    });
+
+    // Топ буфера
+    const cbUsers = data.clipboard_by_user.slice(0, 10);
+    if (chartUsersClipboard) chartUsersClipboard.destroy();
+    chartUsersClipboard = new Chart(document.getElementById('chartUsersClipboard'), {
+        type: 'bar',
+        data: {
+            labels: cbUsers.map(d => d.username),
+            datasets: [{
+                data: cbUsers.map(d => d.count),
+                backgroundColor: [
+                    'rgba(59,130,246,0.7)', 'rgba(6,182,212,0.7)', 'rgba(34,197,94,0.7)',
+                    'rgba(234,179,8,0.7)', 'rgba(168,85,247,0.7)', 'rgba(239,68,68,0.7)',
+                    'rgba(249,115,22,0.7)', 'rgba(236,72,153,0.7)', 'rgba(99,102,241,0.7)', 'rgba(156,163,175,0.7)'
+                ],
+                borderRadius: 6
+            }]
+        },
+        options: barOpts
+    });
+}
+
+async function loadRecentDenied() {
+    const data = await App.fetchJson('/api/access-denied?limit=10');
+    const tbody = document.getElementById('recentDeniedBody');
+    if (!data || data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-text">Нет событий</div></td></tr>';
+        return;
+    }
+    tbody.innerHTML = data.map(e => `
+        <tr>
+            <td>${App.formatDate(e.timestamp)}</td>
+            <td><span class="username-badge">${App.escapeHtml(e.username)}</span></td>
+            <td class="path-cell" title="${App.escapeHtml(e.file_path)}">${App.truncate(e.file_path, 60)}</td>
+            <td>${App.escapeHtml(App.truncate(e.process_name, 30))}</td>
+            <td><span class="severity ${e.severity}">${e.severity}</span></td>
+        </tr>
+    `).join('');
+}
+
+async function loadRecentAlerts() {
+    const data = await App.fetchJson('/api/alerts?limit=5');
+    const container = document.getElementById('recentAlertsList');
+    if (!data || data.length === 0) {
+        container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🔔</div><div class="empty-state-text">Нет оповещений</div></div>';
+        return;
+    }
+    const severityIcons = { critical: '🔴', warning: '🟡', info: '🔵' };
+    container.innerHTML = data.map(a => `
+        <div class="alert-card ${a.is_read ? '' : 'unread'} ${a.is_acknowledged ? 'acknowledged' : ''}">
+            <span class="alert-severity-icon">${severityIcons[a.severity] || '🔵'}</span>
+            <div class="alert-body">
+                <div class="alert-title">${App.escapeHtml(a.title)}</div>
+                <div class="alert-description">${App.escapeHtml(App.truncate(a.description, 150))}</div>
+                <div class="alert-time">${App.formatDate(a.timestamp)}</div>
+            </div>
+        </div>
+    `).join('');
+}
+
+async function refreshData() {
+    await Promise.all([
+        loadStats(),
+        loadRecentDenied(),
+        loadRecentAlerts()
+    ]);
+}
+
+// Загрузка при старте
+(async () => {
+    await loadStats();
+    await loadTimeline();
+    await loadUserStats();
+    await loadRecentDenied();
+    await loadRecentAlerts();
+})();
+</script>
+{% endblock %}

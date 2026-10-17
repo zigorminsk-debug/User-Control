@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}User Control — Мониторинг{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Боковая панель -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <span class="logo-icon">🛡️</span>
+                    <span class="logo-text">User Control</span>
+                </div>
+                <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()">☰</button>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="/" class="nav-item {% if request.path == '/' %}active{% endif %}">
+                    <span class="nav-icon">📊</span>
+                    <span class="nav-label">Панель управления</span>
+                </a>
+                <a href="/access-denied" class="nav-item {% if request.path == '/access-denied' %}active{% endif %}">
+                    <span class="nav-icon">🚫</span>
+                    <span class="nav-label">Отказы в доступе</span>
+                </a>
+                <a href="/clipboard" class="nav-item {% if request.path == '/clipboard' %}active{% endif %}">
+                    <span class="nav-icon">📋</span>
+                    <span class="nav-label">Буфер обмена</span>
+                </a>
+                <a href="/file-operations" class="nav-item {% if request.path == '/file-operations' %}active{% endif %}">
+                    <span class="nav-icon">📁</span>
+                    <span class="nav-label">Файловые операции</span>
+                </a>
+                <a href="/login-events" class="nav-item {% if request.path == '/login-events' %}active{% endif %}">
+                    <span class="nav-icon">🔑</span>
+                    <span class="nav-label">Входы в систему</span>
+                </a>
+                <a href="/sessions" class="nav-item {% if request.path == '/sessions' %}active{% endif %}">
+                    <span class="nav-icon">💻</span>
+                    <span class="nav-label">Активные сессии</span>
+                </a>
+                <a href="/alerts" class="nav-item {% if request.path == '/alerts' %}active{% endif %}">
+                    <span class="nav-icon">🔔</span>
+                    <span class="nav-label">Оповещения</span>
+                    <span class="badge" id="alertBadge" style="display:none">0</span>
+                </a>
+                <a href="/risk-assessment" class="nav-item {% if request.path == '/risk-assessment' %}active{% endif %}">
+                    <span class="nav-icon">⚠️</span>
+                    <span class="nav-label">Оценка рисков</span>
+                </a>
+                <a href="/reports" class="nav-item {% if request.path == '/reports' %}active{% endif %}">
+                    <span class="nav-icon">📄</span>
+                    <span class="nav-label">Отчёты</span>
+                </a>
+                <div class="nav-divider"></div>
+                <a href="/users" class="nav-item {% if request.path == '/users' %}active{% endif %}">
+                    <span class="nav-icon">👥</span>
+                    <span class="nav-label">Пользователи</span>
+                </a>
+                <a href="/settings" class="nav-item {% if request.path == '/settings' %}active{% endif %}">
+                    <span class="nav-icon">⚙️</span>
+                    <span class="nav-label">Настройки</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="server-status" id="serverStatus">
+                    <span class="status-dot online"></span>
+                    <span>Сервер активен</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Основной контент -->
+        <main class="main-content">
+            <header class="top-bar">
+                <div class="top-bar-left">
+                    <h1 class="page-title">{% block page_title %}Панель управления{% endblock %}</h1>
+                </div>
+                <div class="top-bar-right">
+                    <div class="auto-refresh">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="autoRefresh" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span>Авто-обновление</span>
+                    </div>
+                    <span class="current-time" id="currentTime"></span>
+                </div>
+            </header>
+            <div class="content-area">
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+    </div>
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="/static/js/app.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>
