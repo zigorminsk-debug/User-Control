@@ -193,6 +193,14 @@ jobs:
           find artifacts -type f \( -name "*.zip" -o -name "*.tar.gz" -o -name "*.exe" \) -exec cp {} release/ \;
           ls -la release/
 
+      - name: Генерация контрольных сумм SHA-256
+        run: |
+          cd release
+          sha256sum *.zip *.tar.gz > SHA256SUMS.txt 2>/dev/null || sha256sum * > SHA256SUMS.txt
+          sed -i '/SHA256SUMS.txt/d' SHA256SUMS.txt
+          echo "---- SHA256SUMS.txt ----"
+          cat SHA256SUMS.txt
+
       - name: Генерация описания релиза
         id: notes
         run: |
@@ -231,6 +239,23 @@ jobs:
           ### Доступ к веб-интерфейсу
           Откройте `http://localhost:8080`
           Логин: `admin` / `admin123`
+
+          ### 🔍 Проверка целостности (SHA-256)
+          Сравните контрольную сумму скачанного файла со значением из `SHA256SUMS.txt`:
+          ```
+          # Windows (PowerShell)
+          Get-FileHash .\Загрузки\UserControl-v${VERSION}-win64.zip -Algorithm SHA256
+          # Linux / macOS
+          sha256sum UserControl-v${VERSION}-src.zip
+          ```
+
+          ### ⚠️ Если браузер блокирует загрузку
+          Chrome и Edge могут показывать предупреждение «Этот файл может быть опасным» —
+          это ложное срабатывание Safe Browsing: сборка не имеет цифровой подписи, а
+          репозиторий ещё не набрал репутацию. Файл можно сохранить и проверить:
+          1. В панели загрузок нажмите **⋮ → Сохранить** (или на странице
+             `chrome://downloads` выберите **«Сохранить опасный файл»**).
+          2. Сверьте SHA-256 с `SHA256SUMS.txt` из этого релиза.
           RELEASING
 
           # Подставляем версию
