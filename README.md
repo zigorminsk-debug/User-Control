@@ -1,5 +1,8 @@
 # 🛡️ User Control — Система мониторинга действий пользователей
 
+[![CI — Проверка кода](https://github.com/zigorminsk-debug/User-Control/actions/workflows/ci.yml/badge.svg)](https://github.com/zigorminsk-debug/User-Control/actions/workflows/ci.yml)
+[![Build — Сборка](https://github.com/zigorminsk-debug/User-Control/actions/workflows/build.yml/badge.svg)](https://github.com/zigorminsk-debug/User-Control/actions/workflows/build.yml)
+
 Комплексная система контроля и мониторинга действий пользователей на Windows Server с терминальными сессиями. GUI-панель + HTML-интерфейс с аутентификацией.
 
 ---

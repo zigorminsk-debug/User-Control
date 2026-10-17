@@ -1,11 +1,10 @@
 # -*- mode: python ; coding: utf-8 -*-
 # PyInstaller spec file для User Control
 # Сборка: pyinstaller UserControl.spec
+# Формат совместим с PyInstaller >= 5.0 и 6.x (без устаревших
+# block_cipher / a.zipped_data / a.zipfiles)
 
-import sys
 import os
-
-block_cipher = None
 
 # Пути к ресурсам
 web_templates = os.path.join('web', 'templates')
@@ -51,19 +50,15 @@ a = Analysis(
         'scipy',
         'PIL',
     ],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
-    cipher=block_cipher,
     noarchive=False,
 )
 
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+pyz = PYZ(a.pure)
 
 exe = EXE(
     pyz,
     a.scripts,
     a.binaries,
-    a.zipfiles,
     a.datas,
     [],
     name='UserControl',
