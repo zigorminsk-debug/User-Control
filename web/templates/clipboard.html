@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}User Control — Буфер обмена{% endblock %}
+{% block page_title %}📋 Мониторинг буфера обмена{% endblock %}
+
+{% block content %}
+<div class="filters-bar">
+    <div class="filter-group">
+        <label>Пользователь:</label>
+        <input type="text" id="filterUser" placeholder="Имя пользователя" style="width:160px">
+    </div>
+    <div class="filter-group">
+        <label class="toggle-switch">
+            <input type="checkbox" id="filterSuspicious">
+            <span class="toggle-slider"></span>
+        </label>
+        <span>Только подозрительные</span>
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="loadData()">🔍 Найти</button>
+    <button class="btn btn-secondary btn-sm" onclick="resetFilters()">Сбросить</button>
+    <button class="btn btn-secondary btn-sm" onclick="App.exportCsv('clipboard')">📥 Экспорт CSV</button>
+</div>
+
+<!-- Статистика -->
+<div class="stats-grid" style="margin-bottom:16px">
+    <div class="stat-card">
+        <div class="stat-icon blue">📋</div>
+        <div class="stat-info">
+            <div class="stat-label">Всего операций (24ч)</div>
+            <div class="stat-value" id="statTotal">—</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon red">⚠️</div>
+        <div class="stat-info">
+            <div class="stat-label">Подозрительных (24ч)</div>
+            <div class="stat-value" id="statSuspicious">—</div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">📋 События буфера обмена</div>
+        <span class="stat-value" id="totalCount" style="font-size:18px">0</span>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Время</th>
+                    <th>Пользователь</th>
+                    <th>Сессия</th>
+                    <th>Тип</th>
+                    <th>Содержимое</th>
+                    <th>Размер</th>
+                    <th>Приложение</th>
+                    <th>Статус</th>
+                    <th>Причина</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody">
+                <tr><td colspan="9" class="empty-state"><div class="spinner"></div> Загрузка...</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="pagination">
+        <button class="btn btn-secondary btn-sm" id="btnPrev" onclick="prevPage()">← Назад</button>
+        <span class="pagination-info" id="pageInfo">Страница 1</span>
+        <button class="btn btn-secondary btn-sm" id="btnNext" onclick="nextPage()">Далее →</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let offset = 0;
+const limit = 50;
+
+async function loadStats() {
+    const data = await App.fetchJson('/api/stats?hours=24');
+    if (!data) return;
+    document.getElementById('statTotal').textContent = App.formatNumber(data.clipboard_total);
+    document.getElementById('statSuspicious').textContent = App.formatNumber(data.clipboard_suspicious);
+}
+
+async function loadData() {
+    const user = document.getElementById('filterUser').value;
+    const suspicious = document.getElementById('filterSuspicious').checked;
+    let url = `/api/clipboard?limit=${limit}&offset=${offset}`;
+    if (user) url += `&username=${encodeURIComponent(user)}`;
+    if (suspicious) url += `&suspicious=true`;
+    const data = await App.fetchJson(url);
+    if (!data) return;
+
+    document.getElementById('totalCount').textContent = data.length;
+    const tbody = document.getElementById('tableBody');
+
+    if (data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" class="empty-state"><div class="empty-state-icon">📋</div><div class="empty-state-text">Нет событий</div></td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = data.map(e => `
+        <tr style="${e.is_suspicious ? 'background:rgba(239,68,68,0.05)' : ''}">
+            <td>${App.formatDate(e.timestamp)}</td>
+            <td><span class="username-badge">${App.escapeHtml(e.username)}</span></td>
+            <td>${App.escapeHtml(e.session_name || '—')}</td>
+            <td>${App.escapeHtml(e.content_type)}</td>
+            <td title="${App.escapeHtml(e.content_preview)}" class="path-cell">${App.truncate(e.content_preview, 50)}</td>
+            <td>${App.formatNumber(e.content_length)} симв.</td>
+            <td>${App.escapeHtml(e.source_app || '—')}</td>
+            <td>${e.is_suspicious ? '<span class="severity warning">Подозрительно</span>' : '<span class="severity success">Норма</span>'}</td>
+            <td title="${App.escapeHtml(e.reason)}">${App.truncate(e.reason, 40)}</td>
+        </tr>
+    `).join('');
+
+    document.getElementById('pageInfo').textContent = `Страница ${Math.floor(offset / limit) + 1}`;
+    document.getElementById('btnPrev').disabled = offset === 0;
+    document.getElementById('btnNext').disabled = data.length < limit;
+}
+
+function resetFilters() {
+    document.getElementById('filterUser').value = '';
+    document.getElementById('filterSuspicious').checked = false;
+    offset = 0;
+    loadData();
+}
+
+function prevPage() { offset = Math.max(0, offset - limit); loadData(); }
+function nextPage() { offset += limit; loadData(); }
+
+function refreshData() { loadStats(); loadData(); }
+loadStats();
+loadData();
+</script>
+{% endblock %}

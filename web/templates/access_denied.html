@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}User Control — Отказы в доступе{% endblock %}
+{% block page_title %}🚫 Отказы в доступе{% endblock %}
+
+{% block content %}
+<div class="filters-bar">
+    <div class="filter-group">
+        <label>Пользователь:</label>
+        <input type="text" id="filterUser" placeholder="Имя пользователя" style="width:160px">
+    </div>
+    <div class="filter-group">
+        <label>Уровень:</label>
+        <select id="filterSeverity" style="width:120px">
+            <option value="">Все</option>
+            <option value="critical">Critical</option>
+            <option value="warning">Warning</option>
+            <option value="info">Info</option>
+        </select>
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="loadData()">🔍 Найти</button>
+    <button class="btn btn-secondary btn-sm" onclick="resetFilters()">Сбросить</button>
+    <button class="btn btn-secondary btn-sm" onclick="App.exportCsv('access-denied')">📥 Экспорт CSV</button>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">🚫 События отказа в доступе</div>
+        <span class="stat-value" id="totalCount" style="font-size:18px">0</span>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Время</th>
+                    <th>Пользователь</th>
+                    <th>Домен</th>
+                    <th>IP-адрес</th>
+                    <th>Файл/Ресурс</th>
+                    <th>Маска доступа</th>
+                    <th>Процесс</th>
+                    <th>EventID</th>
+                    <th>Уровень</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody">
+                <tr><td colspan="9" class="empty-state"><div class="spinner"></div> Загрузка...</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="pagination">
+        <button class="btn btn-secondary btn-sm" id="btnPrev" onclick="prevPage()">← Назад</button>
+        <span class="pagination-info" id="pageInfo">Страница 1</span>
+        <button class="btn btn-secondary btn-sm" id="btnNext" onclick="nextPage()">Далее →</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let offset = 0;
+const limit = 50;
+
+async function loadData() {
+    const user = document.getElementById('filterUser').value;
+    const severity = document.getElementById('filterSeverity').value;
+    let url = `/api/access-denied?limit=${limit}&offset=${offset}`;
+    if (user) url += `&username=${encodeURIComponent(user)}`;
+    const data = await App.fetchJson(url);
+    if (!data) return;
+
+    document.getElementById('totalCount').textContent = data.length;
+
+    const filtered = severity ? data.filter(e => e.severity === severity) : data;
+    const tbody = document.getElementById('tableBody');
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-text">Нет событий</div></td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = filtered.map(e => `
+        <tr>
+            <td>${App.formatDate(e.timestamp)}</td>
+            <td><span class="username-badge">${App.escapeHtml(e.username)}</span></td>
+            <td>${App.escapeHtml(e.domain)}</td>
+            <td>${App.escapeHtml(e.source_ip)}</td>
+            <td class="path-cell" title="${App.escapeHtml(e.file_path)}">${App.truncate(e.file_path, 50)}</td>
+            <td>${App.escapeHtml(e.access_mask)}</td>
+            <td title="${App.escapeHtml(e.process_name)}">${App.truncate(e.process_name, 30)}</td>
+            <td>${e.event_id}</td>
+            <td><span class="severity ${e.severity}">${e.severity}</span></td>
+        </tr>
+    `).join('');
+
+    document.getElementById('pageInfo').textContent = `Страница ${Math.floor(offset / limit) + 1}`;
+    document.getElementById('btnPrev').disabled = offset === 0;
+    document.getElementById('btnNext').disabled = data.length < limit;
+}
+
+function resetFilters() {
+    document.getElementById('filterUser').value = '';
+    document.getElementById('filterSeverity').value = '';
+    offset = 0;
+    loadData();
+}
+
+function prevPage() {
+    offset = Math.max(0, offset - limit);
+    loadData();
+}
+
+function nextPage() {
+    offset += limit;
+    loadData();
+}
+
+function refreshData() { loadData(); }
+loadData();
+</script>
+{% endblock %}

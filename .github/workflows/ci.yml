@@ -1,0 +1,135 @@
+name: CI — Проверка кода
+
+on:
+  push:
+    branches: [main, 'arena/**']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-check:
+    name: Проверка синтаксиса и линтер
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout репозитория
+        uses: actions/checkout@v4
+
+      - name: Установка Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Установка зависимостей
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8
+          pip install flask sqlalchemy
+
+      - name: Проверка синтаксиса (flake8)
+        run: |
+          # Останавливаемся при ошибках синтаксиса (E9), неопределённых импортах (F63),
+          # неиспользуемых переменных (F7), нулевых вызовах (F82)
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=.git,__pycache__,reports,logs,.venv,venv
+
+      - name: Проверка парсинга всех Python-файлов
+        run: |
+          python -c "
+          import ast, sys, os
+          errors = []
+          for root, dirs, files in os.walk('.'):
+              dirs[:] = [d for d in dirs if d not in ('.git', '__pycache__', '.venv', 'venv', 'reports', 'logs')]
+              for f in files:
+                  if f.endswith('.py'):
+                      path = os.path.join(root, f)
+                      try:
+                          with open(path, 'r') as fh:
+                              ast.parse(fh.read())
+                          print(f'✅ {path}')
+                      except SyntaxError as e:
+                          print(f'❌ {path}: {e}')
+                          errors.append(path)
+          if errors:
+              print(f'\nОшибки в {len(errors)} файлах!')
+              sys.exit(1)
+          print('\nВсе файлы прошли проверку!')
+          "
+
+  test-import:
+    name: Тест импортов модулей
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout репозитория
+        uses: actions/checkout@v4
+
+      - name: Установка Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Установка зависимостей
+        run: |
+          pip install flask sqlalchemy
+
+      - name: Проверка импорта всех модулей
+        run: |
+          python -c "
+          import sys, os
+          sys.path.insert(0, '.')
+          modules = ['config', 'database', 'auth', 'risk_engine', 'reports']
+          for mod in modules:
+              try:
+                  __import__(mod)
+                  print(f'✅ {mod}')
+              except Exception as e:
+                  print(f'❌ {mod}: {e}')
+          # Проверяем monitors
+          from monitors.event_monitor import EventLogMonitor
+          from monitors.clipboard_monitor import ClipboardMonitor
+          from monitors.file_monitor import FileAccessMonitor
+          from monitors.usb_monitor import USBMonitor, NetworkShareMonitor
+          print('✅ monitors (все модули)')
+          # Проверяем web app
+          from web.app import app
+          print('✅ web.app')
+          print('\nВсе импорты прошли!')
+          "
+
+      - name: Smoke-тест веб-сервера
+        run: |
+          # Запускаем сервер в фоне
+          python main.py --no-gui --port 8099 &
+          SERVER_PID=$!
+          sleep 5
+
+          # Проверяем доступность
+          HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8099/login)
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Страница логина доступна (HTTP $HTTP_CODE)"
+          else
+            echo "❌ Страница логина вернула HTTP $HTTP_CODE"
+            kill $SERVER_PID 2>/dev/null
+            exit 1
+          fi
+
+          # Логинимся и проверяем API
+          COOKIE_JAR=$(mktemp)
+          curl -s -c "$COOKIE_JAR" -L -d "username=admin&password=admin123" http://localhost:8099/login > /dev/null
+
+          for endpoint in /api/stats /api/alerts /api/sessions /api/config; do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' -b "$COOKIE_JAR" "http://localhost:8099${endpoint}")
+            if [ "$CODE" = "200" ]; then
+              echo "✅ ${endpoint} → HTTP $CODE"
+            else
+              echo "❌ ${endpoint} → HTTP $CODE"
+            fi
+          done
+
+          # Останавливаем сервер
+          kill $SERVER_PID 2>/dev/null
+          rm -f "$COOKIE_JAR"
+          echo "✅ Smoke-тест пройден!"

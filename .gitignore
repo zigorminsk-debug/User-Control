@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/
+
+# Config and user data (generated at runtime)
+config.json
+users.json
+
+# Reports (generated)
+reports/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Virtual env
+.venv/
+venv/
+env/
+
+# Distribution
+*.msi
+*.exe
+*.zip

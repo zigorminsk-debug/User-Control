@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}User Control — Активные сессии{% endblock %}
+{% block page_title %}💻 Активные сессии терминального сервера{% endblock %}
+
+{% block content %}
+<div class="stats-grid" style="margin-bottom:16px">
+    <div class="stat-card">
+        <div class="stat-icon green">💻</div>
+        <div class="stat-info">
+            <div class="stat-label">Активных сессий</div>
+            <div class="stat-value" id="statSessions">—</div>
+        </div>
+    </div>
+</div>
+
+<div class="sessions-grid" id="sessionsGrid">
+    <div class="empty-state"><div class="spinner"></div> Загрузка...</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadData() {
+    const data = await App.fetchJson('/api/sessions');
+    if (!data) return;
+
+    document.getElementById('statSessions').textContent = data.length;
+    const container = document.getElementById('sessionsGrid');
+
+    if (data.length === 0) {
+        container.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><div class="empty-state-icon">💻</div><div class="empty-state-text">Нет активных сессий</div></div>';
+        return;
+    }
+
+    container.innerHTML = data.map(s => `
+        <div class="session-card">
+            <div class="session-user">
+                <span class="username-badge">${App.escapeHtml(s.username)}</span>
+                <span class="severity success" style="margin-left:auto">Активна</span>
+            </div>
+            <div class="session-detail">
+                <span class="label">Сессия:</span>
+                ${App.escapeHtml(s.session_name || '—')} (ID: ${s.session_id})
+            </div>
+            <div class="session-detail">
+                <span class="label">Клиент:</span>
+                ${App.escapeHtml(s.client_name || '—')}
+            </div>
+            <div class="session-detail">
+                <span class="label">IP-адрес:</span>
+                ${App.escapeHtml(s.client_ip || '—')}
+            </div>
+            <div class="session-detail">
+                <span class="label">Вход:</span>
+                ${App.formatDate(s.login_time)}
+            </div>
+            <div class="session-detail">
+                <span class="label">Активность:</span>
+                ${App.formatDate(s.last_activity)}
+            </div>
+        </div>
+    `).join('');
+}
+
+function refreshData() { loadData(); }
+loadData();
+</script>
+{% endblock %}
