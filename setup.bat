@@ -1,8 +1,15 @@
 @echo off
+chcp 65001 >nul
+setlocal EnableExtensions
+
 :: =============================================
 :: User Control — Скрипт установки для Windows
 :: Запускать от имени администратора!
 :: =============================================
+
+:: Переходим в папку скрипта (при «Запуске от имени администратора»
+:: рабочей папкой становится System32 — это ломает относительные пути)
+cd /d "%~dp0"
 
 echo.
 echo  ============================================
@@ -10,7 +17,7 @@ echo   User Control — Установка
 echo  ============================================
 echo.
 
-:: Проверка прав администратор
+:: Проверка прав администратора
 net session >nul 2>&1
 if %errorlevel% neq 0 (
     echo [ОШИБКА] Запустите скрипт от имени администратора!
@@ -29,8 +36,19 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
+:: Проверка pip (в некоторых установках есть python, но нет pip в PATH)
+python -m pip --version >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [ОШИБКА] Модуль pip не найден!
+    echo Выполните: python -m ensurepip --upgrade
+    echo и повторите установку.
+    pause
+    exit /b 1
+)
+
 echo [1/5] Установка зависимостей Python...
-pip install flask flask-socketio psutil watchdog pywin32 apscheduler sqlalchemy python-dateutil
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 if %errorlevel% neq 0 (
     echo [ОШИБКА] Не удалось установить зависимости
     pause
@@ -39,14 +57,19 @@ if %errorlevel% neq 0 (
 
 echo.
 echo [2/5] Пост-установка pywin32...
-python Scripts\pywin32_postinstall.py -install 2>nul
+for /f "delims=" %%i in ('python -c "import sysconfig; print(sysconfig.get_scripts_directory())"') do set "SCRIPTS_DIR=%%i"
+if exist "%SCRIPTS_DIR%\pywin32_postinstall.py" (
+    python "%SCRIPTS_DIR%\pywin32_postinstall.py" -install >nul 2>&1
+) else (
+    echo   pywin32_postinstall не найден, пропускаю
+)
 
 echo.
 echo [3/5] Включение аудита безопасности Windows...
-auditpol /set /subcategory:"File System" /success:enable /failure:enable
-auditpol /set /subcategory:"File Share" /success:enable /failure:enable
-auditpol /set /subcategory:"Logon" /success:enable /failure:enable
-auditpol /set /subcategory:"Handle Manipulation" /success:enable /failure:enable
+auditpol /set /subcategory:"File System" /success:enable /failure:enable >nul 2>&1
+auditpol /set /subcategory:"File Share" /success:enable /failure:enable >nul 2>&1
+auditpol /set /subcategory:"Logon" /success:enable /failure:enable >nul 2>&1
+auditpol /set /subcategory:"Handle Manipulation" /success:enable /failure:enable >nul 2>&1
 
 echo.
 echo [4/5] Создание директорий...
@@ -59,8 +82,8 @@ if %errorlevel% neq 0 (
     echo [ПРЕДУПРЕЖДЕНИЕ] Служба не установлена. Приложение можно запустить вручную:
     echo   python main.py
 ) else (
-    sc config UserControlMonitor start= auto
-    sc description UserControlMonitor "Мониторинг действий пользователей: отказы в доступе, буфер обмена, файловые операции"
+    sc config UserControlMonitor start= auto >nul 2>&1
+    sc description UserControlMonitor "Мониторинг действий пользователей: отказы в доступе, буфер обмена, файловые операции" >nul 2>&1
     echo.
     echo Служба установлена. Запуск...
     sc start UserControlMonitor
@@ -70,9 +93,11 @@ echo.
 echo  ============================================
 echo   Установка завершена!
 echo.
-echo   Веб-интерфейс: http://localhost:8080
+echo   Запуск вручную:  python main.py
+echo   Веб-интерфейс:   http://localhost:8080
+echo   (браузер откроется автоматически)
 echo.
-echo   Команды управления:
+echo   Команды управления службой:
 echo     sc start UserControlMonitor
 echo     sc stop UserControlMonitor
 echo     sc query UserControlMonitor
