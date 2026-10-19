@@ -1,5 +1,6 @@
 import os
 import json
+import copy
 
 CONFIG_FILE = "config.json"
 

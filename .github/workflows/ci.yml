@@ -35,6 +35,11 @@ jobs:
           # неиспользуемых переменных (F7), нулевых вызовах (F82)
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=.git,__pycache__,reports,logs,.venv,venv
 
+      - name: Полный отчёт flake8 (информационно, не ломает сборку)
+        continue-on-error: true
+        run: |
+          flake8 . --count --max-line-length=140 --show-source --statistics --exclude=.git,__pycache__,reports,logs,.venv,venv || true
+
       - name: Проверка парсинга всех Python-файлов
         run: |
           python -c "
@@ -102,34 +107,49 @@ jobs:
       - name: Smoke-тест веб-сервера
         run: |
           # Запускаем сервер в фоне
-          python main.py --no-gui --port 8099 &
+          python main.py --no-gui --port 8099 > server.log 2>&1 &
           SERVER_PID=$!
-          sleep 5
 
-          # Проверяем доступность
-          HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8099/login)
-          if [ "$HTTP_CODE" = "200" ]; then
-            echo "✅ Страница логина доступна (HTTP $HTTP_CODE)"
-          else
-            echo "❌ Страница логина вернула HTTP $HTTP_CODE"
-            kill $SERVER_PID 2>/dev/null
+          # Ждём готовности сервера до 60 секунд
+          CODE=000
+          for i in $(seq 1 60); do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8099/login || true)
+            if [ "$CODE" = "200" ]; then break; fi
+            # Если процесс упал — выходим сразу
+            if ! kill -0 $SERVER_PID 2>/dev/null; then break; fi
+            sleep 1
+          done
+
+          if [ "$CODE" != "200" ]; then
+            echo "❌ Сервер не ответил (HTTP $CODE). Лог сервера:"
+            cat server.log
+            kill $SERVER_PID 2>/dev/null || true
             exit 1
           fi
+          echo "✅ Страница логина доступна (HTTP 200)"
 
           # Логинимся и проверяем API
           COOKIE_JAR=$(mktemp)
           curl -s -c "$COOKIE_JAR" -L -d "username=admin&password=admin123" http://localhost:8099/login > /dev/null
 
-          for endpoint in /api/stats /api/alerts /api/sessions /api/config; do
+          FAILED=0
+          for endpoint in /api/stats /api/alerts /api/sessions /api/config /api/risk/summary /api/timeline; do
             CODE=$(curl -s -o /dev/null -w '%{http_code}' -b "$COOKIE_JAR" "http://localhost:8099${endpoint}")
             if [ "$CODE" = "200" ]; then
               echo "✅ ${endpoint} → HTTP $CODE"
             else
               echo "❌ ${endpoint} → HTTP $CODE"
+              FAILED=1
             fi
           done
 
           # Останавливаем сервер
-          kill $SERVER_PID 2>/dev/null
+          kill $SERVER_PID 2>/dev/null || true
           rm -f "$COOKIE_JAR"
+
+          if [ "$FAILED" != "0" ]; then
+            echo "---- Лог сервера ----"
+            cat server.log
+            exit 1
+          fi
           echo "✅ Smoke-тест пройден!"

@@ -1,5 +1,8 @@
 # 🛡️ User Control — Система мониторинга действий пользователей
 
+[![CI — Проверка кода](https://github.com/zigorminsk-debug/User-Control/actions/workflows/ci.yml/badge.svg)](https://github.com/zigorminsk-debug/User-Control/actions/workflows/ci.yml)
+[![Build — Сборка](https://github.com/zigorminsk-debug/User-Control/actions/workflows/build.yml/badge.svg)](https://github.com/zigorminsk-debug/User-Control/actions/workflows/build.yml)
+
 Комплексная система контроля и мониторинга действий пользователей на Windows Server с терминальными сессиями. GUI-панель + HTML-интерфейс с аутентификацией.
 
 ---
@@ -95,8 +98,9 @@ python main.py --install
 ## ▶️ Запуск
 
 ```cmd
-python main.py                    # С GUI и веб-интерфейсом
+python main.py                    # С GUI и веб-интерфейсом (браузер откроется сам)
 python main.py --no-gui           # Только веб-интерфейс
+python main.py --no-browser       # Без авто-открытия браузера
 python main.py --port 9090        # Указание порта
 ```
 

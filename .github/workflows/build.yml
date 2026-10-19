@@ -2,6 +2,7 @@ name: Build — Сборка Windows-приложения
 
 on:
   push:
+    branches: [main]
     tags:
       - 'v*'
   workflow_dispatch:
@@ -10,6 +11,10 @@ on:
         description: 'Версия релиза (например: 1.0.0)'
         required: false
         default: 'dev'
+      create_release:
+        description: 'Опубликовать GitHub Release после сборки?'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -29,6 +34,19 @@ jobs:
       - name: Checkout репозитория
         uses: actions/checkout@v4
 
+      - name: Определение версии
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $version = "${{ inputs.version }}"
+          } elseif ("${{ github.ref_type }}" -eq "tag") {
+            $version = "${{ github.ref_name }}".TrimStart("v")
+          } else {
+            $version = "${{ github.sha }}".Substring(0, 7)
+          }
+          echo "VERSION=$version" >> $env:GITHUB_ENV
+          echo "Версия сборки: $version"
+
       - name: Установка Python
         uses: actions/setup-python@v5
         with:
@@ -46,6 +64,7 @@ jobs:
           pyinstaller UserControl.spec --clean
 
       - name: Проверка артефакта
+        shell: pwsh
         run: |
           if (Test-Path "dist/${{ env.APP_NAME }}.exe") {
             echo "✅ Сборка успешна!"
@@ -58,10 +77,7 @@ jobs:
       - name: Создание архива с .exe
         shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}".TrimStart("v")
-          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
-            $version = "${{ github.event.inputs.version }}"
-          }
+          $version = $env:VERSION
           $archiveName = "${{ env.APP_NAME }}-v${version}-win64.zip"
 
           # Копируем .exe и конфиг
@@ -78,14 +94,13 @@ jobs:
           Copy-Item "web/static/*" "package/web/static/" -Recurse -ErrorAction SilentlyContinue
 
           Compress-Archive -Path "package/*" -DestinationPath $archiveName
-          echo "ARCHIVE_NAME=$archiveName" >> $env:GITHUB_ENV
-          echo "VERSION=$version" >> $env:GITHUB_ENV
+          echo "✅ Архив создан: $archiveName ($((Get-Item $archiveName).Length) байт)"
 
       - name: Загрузка артефакта
         uses: actions/upload-artifact@v4
         with:
           name: windows-build
-          path: ${{ env.APP_NAME }}-*.zip
+          path: ${{ env.APP_NAME }}-v*.zip
           retention-days: 30
 
   # ──────────────────────────────────────────────
@@ -101,11 +116,15 @@ jobs:
       - name: Определение версии
         id: version
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
-            VERSION="${{ github.event.inputs.version }}"
+            VERSION="${{ inputs.version }}"
+          elif [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="${GITHUB_SHA::7}"
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Версия сборки: $VERSION"
 
       - name: Создание портативного пакета
         run: |
@@ -121,9 +140,9 @@ jobs:
           tar -czf "UserControl-v${VERSION}-src.tar.gz" "$PACKAGE_DIR"
 
           # Создаём .zip
-          zip -r "UserControl-v${VERSION}-src.zip" "$PACKAGE_DIR"
+          zip -r "UserControl-v${VERSION}-src.zip" "$PACKAGE_DIR" > /dev/null
 
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "✅ Пакеты созданы: UserControl-v${VERSION}-src.tar.gz, UserControl-v${VERSION}-src.zip"
 
       - name: Загрузка артефактов
         uses: actions/upload-artifact@v4
@@ -136,12 +155,16 @@ jobs:
 
   # ──────────────────────────────────────────────
   # Шаг 3: Публикация релиза на GitHub
+  # Запускается только на тегах v* или при ручном
+  # запуске с create_release = true
   # ──────────────────────────────────────────────
   release:
     name: Публикация релиза
     needs: [build-windows, build-python-package]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    if: >-
+      startsWith(github.ref, 'refs/tags/v')
+      || (github.event_name == 'workflow_dispatch' && inputs.create_release == true)
     steps:
       - name: Checkout репозитория
         uses: actions/checkout@v4
@@ -149,11 +172,15 @@ jobs:
       - name: Определение версии
         id: version
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
-            VERSION="${{ github.event.inputs.version }}"
+            VERSION="${{ inputs.version }}"
+          elif [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="${GITHUB_SHA::7}"
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Версия релиза: $VERSION"
 
       - name: Скачивание артефактов
         uses: actions/download-artifact@v4
@@ -165,6 +192,14 @@ jobs:
           mkdir -p release
           find artifacts -type f \( -name "*.zip" -o -name "*.tar.gz" -o -name "*.exe" \) -exec cp {} release/ \;
           ls -la release/
+
+      - name: Генерация контрольных сумм SHA-256
+        run: |
+          cd release
+          sha256sum *.zip *.tar.gz > SHA256SUMS.txt 2>/dev/null || sha256sum * > SHA256SUMS.txt
+          sed -i '/SHA256SUMS.txt/d' SHA256SUMS.txt
+          echo "---- SHA256SUMS.txt ----"
+          cat SHA256SUMS.txt
 
       - name: Генерация описания релиза
         id: notes
@@ -204,6 +239,23 @@ jobs:
           ### Доступ к веб-интерфейсу
           Откройте `http://localhost:8080`
           Логин: `admin` / `admin123`
+
+          ### 🔍 Проверка целостности (SHA-256)
+          Сравните контрольную сумму скачанного файла со значением из `SHA256SUMS.txt`:
+          ```
+          # Windows (PowerShell)
+          Get-FileHash .\Загрузки\UserControl-v${VERSION}-win64.zip -Algorithm SHA256
+          # Linux / macOS
+          sha256sum UserControl-v${VERSION}-src.zip
+          ```
+
+          ### ⚠️ Если браузер блокирует загрузку
+          Chrome и Edge могут показывать предупреждение «Этот файл может быть опасным» —
+          это ложное срабатывание Safe Browsing: сборка не имеет цифровой подписи, а
+          репозиторий ещё не набрал репутацию. Файл можно сохранить и проверить:
+          1. В панели загрузок нажмите **⋮ → Сохранить** (или на странице
+             `chrome://downloads` выберите **«Сохранить опасный файл»**).
+          2. Сверьте SHA-256 с `SHA256SUMS.txt` из этого релиза.
           RELEASING
 
           # Подставляем версию
@@ -212,7 +264,7 @@ jobs:
       - name: Публикация релиза
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: v${{ steps.version.outputs.version }}
           name: "User Control v${{ steps.version.outputs.version }}"
           body_path: release_notes.md
           files: release/*

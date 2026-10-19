@@ -9,8 +9,9 @@ User Control — Система мониторинга действий поль
   - GUI-панель управления (опционально)
 
 Использование:
-  python main.py                  # Запуск с GUI и веб-интерфейсом
+  python main.py                  # Запуск с GUI, веб-интерфейсом и авто-открытием браузера
   python main.py --no-gui         # Только веб-интерфейс (для службы)
+  python main.py --no-browser     # Не открывать браузер автоматически
   python main.py --port 9090      # Указание порта
   python main.py --install        # Установка как служба Windows
   python main.py --uninstall      # Удаление службы Windows
@@ -102,6 +103,44 @@ def start_web_server(host, port):
     thread.start()
     logger.info(f"Веб-сервер запущен: http://{host}:{port}")
     return thread
+
+
+def open_web_browser(host, port, timeout=30):
+    """Дождаться готовности веб-сервера и открыть интерфейс в браузере.
+
+    Выполняется в отдельном потоке: опрашивает сервер до появления ответа
+    (максимум timeout секунд), затем открывает браузер.
+    """
+    import time
+    import urllib.request
+    import webbrowser
+
+    display_host = "localhost" if host in ("0.0.0.0", "", "::") else host
+    url = f"http://{display_host}:{port}"
+    probe_url = f"{url}/login"
+
+    deadline = time.time() + timeout
+    ready = False
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(probe_url, timeout=2) as resp:
+                if resp.status == 200:
+                    ready = True
+                    break
+        except Exception:
+            pass
+        time.sleep(0.5)
+
+    if not ready:
+        logger.warning(f"Веб-сервер не ответил за {timeout} с — браузер не открыт")
+        return
+
+    logger.info(f"Открываю веб-интерфейс в браузере: {url}")
+    try:
+        if not webbrowser.open(url):
+            logger.warning(f"Не удалось открыть браузер автоматически. Веб-интерфейс доступен: {url}")
+    except Exception as e:
+        logger.warning(f"Ошибка открытия браузера: {e}. Веб-интерфейс доступен: {url}")
 
 
 def start_gui(monitors):
@@ -318,6 +357,7 @@ def main():
         description="User Control — Система мониторинга действий пользователей"
     )
     parser.add_argument("--no-gui", action="store_true", help="Запуск без GUI")
+    parser.add_argument("--no-browser", action="store_true", help="Не открывать браузер при запуске")
     parser.add_argument("--port", type=int, default=None, help="Порт веб-сервера")
     parser.add_argument("--host", type=str, default=None, help="Хост веб-сервера")
     parser.add_argument("--install", action="store_true", help="Установить как службу Windows")
@@ -360,6 +400,13 @@ def main():
 
     # Запуск веб-сервера
     web_thread = start_web_server(host, port)
+
+    # Автоматическое открытие веб-интерфейса в браузере
+    if not args.no_browser:
+        threading.Thread(
+            target=open_web_browser, args=(host, port),
+            daemon=True, name="WebBrowserOpener",
+        ).start()
 
     if not args.no_gui:
         root = start_gui(monitors)
